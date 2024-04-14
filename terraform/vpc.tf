@@ -1,73 +1,54 @@
+# create vpc
 resource "aws_vpc" "vpc" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = var.vpc_cidr
+  instance_tenancy     = "default"
+  enable_dns_hostnames = true
 
   tags = {
-    Name = var.vpc-name
+    Name = "${var.project_name}-${var.environment}-vpc"
   }
 }
 
-resource "aws_internet_gateway" "igw" {
+# create internet gateway and attach it to vpc
+resource "aws_internet_gateway" "internet_gateway" {
   vpc_id = aws_vpc.vpc.id
 
   tags = {
-    Name = var.igw-name
+    Name = "${var.project_name}-${var.environment}-igw"
   }
 }
 
-resource "aws_subnet" "public-subnet" {
+# use data source to get all avalablility zones in region
+data "aws_availability_zones" "available_zones" {}
+
+# create public subnet az1
+resource "aws_subnet" "public_subnet_az1" {
   vpc_id                  = aws_vpc.vpc.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"
+  cidr_block              = var.public_subnet_az1_cidr
+  availability_zone       = data.aws_availability_zones.available_zones.names[0]
   map_public_ip_on_launch = true
 
   tags = {
-    Name = var.subnet-name
+    Name = "${var.project_name}-${var.environment}-public-az1"
   }
 }
 
-resource "aws_route_table" "rt" {
+# create route table and add public route
+resource "aws_route_table" "public_route_table" {
   vpc_id = aws_vpc.vpc.id
+
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+    gateway_id = aws_internet_gateway.internet_gateway.id
   }
 
   tags = {
-    Name = var.rt-name
+    Name = "${var.project_name}-${var.environment}-public-rt"
   }
 }
 
-resource "aws_route_table_association" "rt-association" {
-  route_table_id = aws_route_table.rt.id
-  subnet_id      = aws_subnet.public-subnet.id
-}
-
-resource "aws_security_group" "security-group" {
-  vpc_id      = aws_vpc.vpc.id
-  description = "Allowing Jenkins, Sonarqube, SSH Access"
-
-  ingress = [
-    for port in [22, 8080, 9000, 9090, 80] : {
-      description      = "TLS from VPC"
-      from_port        = port
-      to_port          = port
-      protocol         = "tcp"
-      ipv6_cidr_blocks = ["::/0"]
-      self             = false
-      prefix_list_ids  = []
-      security_groups  = []
-      cidr_blocks      = ["0.0.0.0/0"]
-    }
-  ]
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = var.sg-name
-  }
+# associate public subnet az1 to "public route table"
+resource "aws_route_table_association" "public_subnet_az1_rt_association" {
+  subnet_id      = aws_subnet.public_subnet_az1.id
+  route_table_id = aws_route_table.public_route_table.id
 }
